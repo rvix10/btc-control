@@ -1,0 +1,22 @@
+node_modules
+dist
+dist-ssr
+*.local
+.vite
+.DS_Store
+.idea
+*.iml
+.claude/settings.local.json
+
+# Secretos y estado del bot
+bot/estado.json
+.env
+
+# Datos personales: historial de transacciones y notas con cifras reales.
+# NO publicar: un repo público conserva esto en el historial de git para siempre.
+MEMORIA.md
+reporte_transacciones_btc.md
+transacciones_btc_consolidadas.md
+movimientos_btc.md
+historial_completo_btc.md
+btc-control-respaldo*.json

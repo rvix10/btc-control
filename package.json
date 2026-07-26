@@ -1,0 +1,23 @@
+{
+  "name": "btc-control",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "description": "Control de compras, retiros, ganancias y proyeccion de BTC",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "bot": "node bot/bot.js"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "recharts": "^2.12.7",
+    "lucide-react": "^0.454.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.11"
+  }
+}
