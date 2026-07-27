@@ -17,24 +17,31 @@ Sin dependencias: solo Node 18 o superior.
 > El token es la contraseña del bot: quien lo tenga controla el bot. No lo subas a
 > git ni lo pegues en un chat. Ya está cubierto por `.gitignore`.
 
-## 2. Arrancarlo
+## 2. Guardar el token
 
-Desde la carpeta del proyecto, en PowerShell:
+Copia `bot/.env.example` a **`bot/.env`** y pon tu token dentro:
 
-```powershell
-$env:TELEGRAM_TOKEN = "8123456789:AAF..."
-npm run bot
+```
+TELEGRAM_TOKEN=8123456789:AAF...
 ```
 
-En Git Bash:
+`bot/.env` está en `.gitignore`, así que nunca se sube al repositorio. Es la forma
+recomendada: escribes el token una vez en un archivo local y no vuelve a aparecer
+en la línea de comandos ni en el historial de la terminal.
+
+> Como alternativa puedes exportarlo como variable de entorno
+> (`$env:TELEGRAM_TOKEN = "..."` en PowerShell); si existe, tiene prioridad sobre
+> el archivo.
+
+## 3. Arrancarlo
 
 ```bash
-TELEGRAM_TOKEN="8123456789:AAF..." npm run bot
+npm run bot
 ```
 
 Deberías ver `Bot @tu_bot arriba. Intervalo 60s.`
 
-## 3. Vincularlo contigo
+## 4. Vincularlo contigo
 
 En Telegram, abre tu bot y mándale **`/start`**. Ahí queda registrado tu chat y ya
 puede escribirte. Sin ese paso Telegram no permite que el bot inicie la conversación.

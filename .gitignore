@@ -11,6 +11,8 @@ dist-ssr
 # Secretos y estado del bot
 bot/estado.json
 .env
+**/.env
+!**/.env.example
 
 # Datos personales: historial de transacciones y notas con cifras reales.
 # NO publicar: un repo público conserva esto en el historial de git para siempre.

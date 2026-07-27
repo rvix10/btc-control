@@ -15,12 +15,32 @@ import { fileURLToPath } from "node:url";
 const DIR = path.dirname(fileURLToPath(import.meta.url));
 const ESTADO = path.join(DIR, "estado.json");
 
+/* Carga bot/.env si existe, para no tener que exportar el token en cada terminal.
+   Las variables ya presentes en el entorno tienen prioridad. */
+function cargarEnv(archivo) {
+  try {
+    for (const linea of fs.readFileSync(archivo, "utf8").split(/\r?\n/)) {
+      const t = linea.trim();
+      if (!t || t.startsWith("#")) continue;
+      const i = t.indexOf("=");
+      if (i < 0) continue;
+      const clave = t.slice(0, i).trim();
+      let valor = t.slice(i + 1).trim();
+      if (/^(".*"|'.*')$/s.test(valor)) valor = valor.slice(1, -1);
+      if (!(clave in process.env)) process.env[clave] = valor;
+    }
+  } catch {} // no existe: seguimos con el entorno tal cual
+}
+cargarEnv(path.join(DIR, ".env"));
+
 const TOKEN = process.env.TELEGRAM_TOKEN;
 const INTERVALO = Number(process.env.INTERVALO_SEG || 60) * 1000;
 const API = `https://api.telegram.org/bot${TOKEN}`;
 
 if (!TOKEN) {
-  console.error("Falta TELEGRAM_TOKEN. Consíguelo con @BotFather y expórtalo antes de arrancar.");
+  console.error("Falta TELEGRAM_TOKEN.");
+  console.error("Crea bot/.env con:  TELEGRAM_TOKEN=tu-token-de-BotFather");
+  console.error("(o expórtalo como variable de entorno antes de arrancar)");
   process.exit(1);
 }
 
