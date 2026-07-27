@@ -10,6 +10,8 @@ dist-ssr
 
 # Secretos y estado del bot
 bot/estado.json
+bot/bot.log
+bot/iniciar.vbs
 .env
 **/.env
 !**/.env.example

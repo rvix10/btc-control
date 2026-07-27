@@ -88,11 +88,35 @@ El bot solo vigila mientras el proceso esté vivo. Opciones, de menos a más esf
 **Tu PC encendida.** Dejas la terminal abierta. Sirve para probar, pero si apagas
 o reinicias, se cae.
 
-**Arranque automático en Windows.** Programador de tareas → Crear tarea → disparador
-"Al iniciar sesión" → acción: `node` con argumento `bot\bot.js` y directorio de
-inicio el del proyecto. Añade `TELEGRAM_TOKEN` a las variables de entorno de tu
-usuario para no tener que exportarlo cada vez. Sigue dependiendo de que la PC esté
-encendida, pero sobrevive a reinicios.
+**Arranque automático en Windows.** Una tarea programada que lo levante al iniciar
+sesión. Sobrevive a reinicios, pero sigue dependiendo de que la PC esté encendida.
+
+Como el bot resuelve `.env` y `estado.json` relativos a su propio archivo, no hace
+falta configurar directorio de inicio: basta la ruta absoluta a `bot.js`.
+
+Para que no aparezca una ventana de consola, conviene lanzarlo con un `.vbs` que
+ejecute Node en modo oculto y redirija la salida a `bot\bot.log`. Registro de la
+tarea desde PowerShell:
+
+```powershell
+$vbs = "C:\ruta\al\proyecto\bot\iniciar.vbs"
+$me  = "$env:USERDOMAIN\$env:USERNAME"
+$action    = New-ScheduledTaskAction -Execute "wscript.exe" -Argument ('"' + $vbs + '"')
+$trigger   = New-ScheduledTaskTrigger -AtLogOn -User $me
+$settings  = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries `
+             -RestartInterval (New-TimeSpan -Minutes 1) -RestartCount 3 `
+             -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+$principal = New-ScheduledTaskPrincipal -UserId $me -LogonType Interactive -RunLevel Limited
+Register-ScheduledTask -TaskName "Bot BTC" -Action $action -Trigger $trigger `
+                       -Settings $settings -Principal $principal -Force
+```
+
+Comandos útiles: `schtasks /run /tn "Bot BTC"`, `schtasks /end /tn "Bot BTC"`,
+`schtasks /query /tn "Bot BTC"`, `schtasks /delete /tn "Bot BTC" /f`.
+
+> **Solo una instancia por token.** Telegram rechaza un segundo proceso escuchando
+> con el mismo token (error 409). Antes de arrancar la tarea, cierra el bot que
+> tengas corriendo en una terminal.
 
 **Hospedado.** Cualquier servicio que corra un proceso Node permanente (Fly.io,
 Railway, Render, una VPS mínima, o una Raspberry Pi en casa). Es la única opción
