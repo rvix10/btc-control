@@ -72,7 +72,8 @@ ese nivel, créala de nuevo.
 | `INTERVALO_SEG` | `60` | Cada cuántos segundos consulta el precio |
 
 No bajes mucho el intervalo: la API gratuita de CoinGecko limita a unas 10–30
-llamadas por minuto y te puede bloquear temporalmente.
+llamadas por minuto y te puede bloquear temporalmente. Si CoinGecko falla, el bot
+usa la API pública de Coinbase como respaldo.
 
 ## Estado
 

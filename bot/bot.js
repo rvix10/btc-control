@@ -72,6 +72,8 @@ const cruzo = (a, antes, ahora) =>
 async function tg(metodo, body) {
   const r = await fetch(`${API}/${metodo}`, {
     method: "POST",
+    // getUpdates espera hasta 50 s (long polling); el resto no debería tardar tanto
+    signal: AbortSignal.timeout(metodo === "getUpdates" ? 65000 : 15000),
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
   });
@@ -86,13 +88,26 @@ const enviar = (chat_id, text) =>
 const avisarATodos = (text) => Promise.all(estado.chats.map((c) => enviar(c, text)));
 
 /* ---------- precio ---------- */
+/* mismas fuentes que la app: si CoinGecko falla (429, caída, timeout) se usa Coinbase */
+const FUENTES = [
+  { nombre: "CoinGecko", url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", leer: (d) => d?.bitcoin?.usd },
+  { nombre: "Coinbase", url: "https://api.coinbase.com/v2/prices/BTC-USD/spot", leer: (d) => parseFloat(d?.data?.amount) },
+];
+
 async function precioBTC() {
-  const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
-  if (!r.ok) throw new Error("CoinGecko HTTP " + r.status);
-  const d = await r.json();
-  const p = d?.bitcoin?.usd;
-  if (!p) throw new Error("respuesta sin precio");
-  return p;
+  const errores = [];
+  for (const f of FUENTES) {
+    try {
+      const r = await fetch(f.url, { signal: AbortSignal.timeout(8000) });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      const p = Number(f.leer(await r.json()));
+      if (p > 0) return p;
+      throw new Error("respuesta sin precio");
+    } catch (e) {
+      errores.push(`${f.nombre}: ${e.message}`);
+    }
+  }
+  throw new Error(errores.join(" · "));
 }
 
 /* ---------- comandos ---------- */
