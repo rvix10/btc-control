@@ -377,14 +377,14 @@ export default function App() {
       <div style={{ maxWidth: 1120, margin: "0 auto", padding: "18px 16px 60px" }}>
 
         {/* ---------- Header ---------- */}
-        <header className="flex items-center justify-between" style={{ marginBottom: 18 }}>
+        <header className="flex items-center justify-between" style={{ marginBottom: 18, gap: 10 }}>
           <div className="flex items-center" style={{ gap: 11 }}>
             <div style={{ width: 40, height: 40, borderRadius: 11, background: C.orange, display: "grid", placeItems: "center", boxShadow: `0 0 24px ${C.orangeDim}66` }}>
               <Bitcoin size={23} color="#111" strokeWidth={2.4} />
             </div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: -0.2 }}>Control BTC</div>
-              <div style={{ fontSize: 11.5, color: C.mut2, letterSpacing: 0.3, textTransform: "uppercase" }}>Libro de compras &amp; retiros</div>
+              <div className="app-sub" style={{ fontSize: 11.5, color: C.mut2, letterSpacing: 0.3, textTransform: "uppercase" }}>Libro de compras &amp; retiros</div>
             </div>
           </div>
           <PriceBadge price={price} status={priceStatus} tick={tick} lastUpdated={lastUpdated} fuente={fuente}
@@ -411,7 +411,7 @@ export default function App() {
         ) : (
         <>
         {/* ---------- Nav ---------- */}
-        <nav className="flex" style={{ gap: 6, background: C.bg2, padding: 5, borderRadius: 13, border: `1px solid ${C.line}`, marginBottom: 18, overflowX: "auto" }}>
+        <nav className="flex app-nav" style={{ gap: 6, background: C.bg2, padding: 5, borderRadius: 13, border: `1px solid ${C.line}`, marginBottom: 18, overflowX: "auto" }}>
           {NAV.map((n) => {
             const on = tab === n.id;
             const Icon = n.icon;
@@ -422,7 +422,7 @@ export default function App() {
                   border: on ? `1px solid ${C.line}` : "1px solid transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
                 <Icon size={16} color={on ? C.orange : C.mut2} /> {n.label}
                 {n.id === "alertas" && (sinVer > 0 || activas > 0) && (
-                  <span style={{ ...mono, fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "1px 6px",
+                  <span className="tab-badge" style={{ ...mono, fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "1px 6px",
                     background: sinVer > 0 ? C.red : C.line, color: sinVer > 0 ? "#fff" : C.mut }}>
                     {sinVer > 0 ? sinVer : activas}
                   </span>
@@ -538,7 +538,7 @@ function PriceBadge({ price, status, tick, lastUpdated, fuente, onRefresh, onSet
   const tickColor = up ? C.green : down ? C.red : C.mut2;
   const hora = lastUpdated ? new Date(lastUpdated).toLocaleTimeString("es-SV", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : null;
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "8px 11px", minWidth: 176 }}>
+    <div className="price-badge" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "8px 11px", minWidth: 176 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 2 }}>
         <span style={{ fontSize: 10.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 5 }}>
           <span className={status === "live" ? "pulse" : ""} style={{ width: 6, height: 6, borderRadius: 6, background: dot, display: "inline-block" }} /> BTC/USD · {label}
@@ -563,7 +563,7 @@ function PriceBadge({ price, status, tick, lastUpdated, fuente, onRefresh, onSet
         </div>
       )}
       {hora && !edit && (
-        <div style={{ ...mono, fontSize: 9.5, color: status === "stale" ? C.orange : C.mut2, marginTop: 1 }}>act. {hora}{fuente && status !== "manual" ? ` · ${fuente}` : ""}</div>
+        <div style={{ ...mono, fontSize: 9.5, color: status === "stale" ? C.orange : C.mut2, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>act. {hora}{fuente && status !== "manual" ? ` · ${fuente}` : ""}</div>
       )}
     </div>
   );
@@ -595,7 +595,7 @@ function Dashboard({ m, price, purchases, onGoTo }) {
               BTC que tienes + efectivo que ya retiraste. No es saldo disponible.
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div className="al-der">
             <div style={{ fontSize: 11.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.6 }}>Ganancia total</div>
             <div style={{ ...mono, fontSize: 30, fontWeight: 700, color: posT ? C.green : C.red, lineHeight: 1.05, marginTop: 4 }}>
               {posT ? "+" : ""}{usd(m.gananciaTotal)}
@@ -1098,7 +1098,7 @@ function Proyeccion({ m, price, setPrice }) {
     <div>
       <div style={{ ...cardBox, padding: 18, marginBottom: 14 }}>
         <SectionTitle icon={Target}>Simulador de precio</SectionTitle>
-        <div className="flex items-baseline justify-between" style={{ marginBottom: 6 }}>
+        <div className="flex items-baseline justify-between" style={{ marginBottom: 6, flexWrap: "wrap", gap: "8px 16px" }}>
           <div>
             <div style={{ fontSize: 11.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5 }}>Si BTC llega a (editable)</div>
             <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -1108,7 +1108,7 @@ function Proyeccion({ m, price, setPrice }) {
                   borderBottom: `2px solid ${C.orangeDim}`, outline: "none", width: 150, padding: "0 2px" }} />
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div className="al-der">
             <div style={{ fontSize: 11.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5 }}>Ganancia total proyectada</div>
             <div style={{ ...mono, fontSize: 30, fontWeight: 700, color: pos ? C.green : C.red }}>{pos ? "+" : ""}{usd(projTotal)}</div>
           </div>
@@ -1138,7 +1138,7 @@ function Proyeccion({ m, price, setPrice }) {
                 </linearGradient>
               </defs>
               <CartesianGrid stroke={C.line} strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="precio" tick={{ fill: C.mut2, fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} stroke={C.line} />
+              <XAxis dataKey="precio" tick={{ fill: C.mut2, fontSize: 11 }} minTickGap={28} interval="preserveStartEnd" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} stroke={C.line} />
               <YAxis tick={{ fill: C.mut2, fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} stroke={C.line} width={44} />
               <Tooltip contentStyle={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, color: C.text }}
                 labelFormatter={(v) => `BTC a ${usd0(v)}`} formatter={(v) => [usd(v), "Ganancia total"]} />
@@ -1442,7 +1442,7 @@ function Alertas({ alerts, setAlerts, price, m }) {
       )}
 
       <p style={{ fontSize: 11.5, color: C.mut2, marginTop: 14, lineHeight: 1.6 }}>
-        El precio se consulta cada 30 s, así que las alertas solo se evalúan <b style={{ color: C.mut }}>con esta pestaña abierta</b> —
+        El precio llega en vivo mientras la app está abierta, así que las alertas solo se evalúan <b style={{ color: C.mut }}>con esta pestaña abierta</b> —
         si cierras el navegador no hay quien vigile. Una alerta se dispara al <b style={{ color: C.mut }}>cruzar</b> el objetivo y luego
         queda en el historial; puedes volver a armarla desde ahí. Los navegadores ralentizan las pestañas en segundo plano,
         así que en background la comprobación puede espaciarse a ~1 min.
@@ -1472,7 +1472,7 @@ function Kpi({ label, value, sub, color, accent }) {
   return (
     <div style={{ ...cardBox, padding: 14, borderLeft: accent ? `3px solid ${accent}` : `1px solid ${C.line}` }}>
       <div style={{ fontSize: 11, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ ...mono, fontSize: 20, fontWeight: 700, marginTop: 5, color: color || C.text, lineHeight: 1.15 }}>{value}</div>
+      <div className="kpi-val" style={{ ...mono, fontSize: 20, fontWeight: 700, marginTop: 5, color: color || C.text, lineHeight: 1.15 }}>{value}</div>
       {sub && <div style={{ fontSize: 11.5, color: C.mut2, marginTop: 3 }}>{sub}</div>}
     </div>
   );
@@ -1552,13 +1552,29 @@ function Calc({ label, value, hint, accent }) {
 
 /* ---------- estilos globales del artifact ---------- */
 const styleSheet = `
-  .grid-kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .grid-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .grid-hero { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  /* minmax(0, 1fr): una cifra larga no puede ensanchar la columna y sacar la tarjeta de la pantalla */
+  .grid-kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .grid-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .grid-hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .al-der { text-align: right; }
+  td { white-space: nowrap; }
   @media (max-width: 720px) {
-    .grid-kpi { grid-template-columns: repeat(2, 1fr); }
-    .grid-form { grid-template-columns: repeat(2, 1fr); }
-    .calc-row { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
+    .grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .calc-row { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px !important; }
+  }
+  /* teléfono */
+  @media (max-width: 560px) {
+    .app-sub { display: none; }
+    .price-badge { min-width: 0 !important; max-width: 60vw; }
+    .grid-hero { grid-template-columns: minmax(0, 1fr); }
+    .al-der { text-align: left; }
+    /* las 5 pestañas caben: icono arriba, texto abajo */
+    .app-nav { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px !important; overflow: visible !important; }
+    .tab-btn { position: relative; flex-direction: column; gap: 3px !important; padding: 7px 2px !important; font-size: 10.5px !important; min-width: 0; }
+    /* las cifras se achican con la pantalla para no salirse de su tarjeta */
+    .kpi-val { font-size: clamp(14px, 4.5vw, 20px) !important; overflow-wrap: anywhere; }
+    .tab-badge { position: absolute; top: 3px; right: 4px; font-size: 9.5px !important; padding: 0 5px !important; }
   }
   input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
   .spin { animation: spin 0.8s linear infinite; }
