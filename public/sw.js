@@ -1,6 +1,6 @@
 /* Service worker: permite abrir la app sin conexión.
    Estrategia: stale-while-revalidate para lo propio, red directa para la API de precios. */
-const CACHE = "control-btc-v1";
+const CACHE = "control-btc-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 

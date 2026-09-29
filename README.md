@@ -51,8 +51,15 @@ Puedes elegir entre tres caminos:
 - **Instalable** como app en el teléfono (PWA), funciona sin conexión.
 
 Las ganancias usan **costo promedio ponderado**; el punto de equilibrio es ese costo
-promedio. El precio viene de la API pública de CoinGecko, sin API key, y se refresca
-cada 30 s. Si la red la bloquea, puedes escribir el precio a mano tocando el número.
+promedio.
+
+**Precio en tiempo real.** Llega por el WebSocket público de Coinbase (se muestra como
+mucho una actualización cada 2 s) y, como respaldo, se consulta por REST cada 30 s
+cuando el WebSocket no trae nada: primero Coinbase y, si falla, CoinGecko (que
+bloquea algunas redes móviles con un 403). Nada de esto necesita API key. Cada petición tiene un límite de 8 s y el
+WebSocket se reconecta solo. Si pasan más de 90 s sin lecturas, el indicador cambia
+de *En vivo* a *Desactualizado*. Puedes escribir el precio a mano tocando el número:
+queda fijo en *Manual* hasta que toques el botón de refrescar.
 
 ## Publicar en GitHub Pages
 

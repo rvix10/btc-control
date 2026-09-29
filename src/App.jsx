@@ -62,6 +62,41 @@ const d8 = (n) => (isFinite(n) ? (Math.round(n * 1e8) / 1e8).toString() : "");
 
 const mono = { fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace", fontVariantNumeric: "tabular-nums" };
 
+/* ---------- Fuentes de precio ---------- */
+// REST: se prueban en orden; si una falla (red, 403/429, timeout) se pasa a la siguiente.
+// Coinbase primero: es la misma fuente que el WebSocket, y CoinGecko bloquea algunas IPs (403 de CloudFront)
+const FUENTES = [
+  { nombre: "Coinbase", url: "https://api.coinbase.com/v2/prices/BTC-USD/spot", leer: (d) => parseFloat(d?.data?.amount) },
+  { nombre: "CoinGecko", url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", leer: (d) => d?.bitcoin?.usd },
+];
+// WebSocket público de Coinbase: una lectura por operación, sin API key
+const WS_URL = "wss://ws-feed.exchange.coinbase.com";
+const WS_MIN_MS = 2000;       // como mucho una actualización cada 2 s, para no re-renderizar en cada operación
+const WS_SILENCIO_MS = 60000; // sin mensajes en este tiempo: conexión muerta, reconectar
+const POLL_MS = 30000;        // consulta REST de respaldo
+const TIMEOUT_MS = 8000;
+const VIEJO_MS = 90000;       // sin lecturas en este tiempo: el precio se marca como desactualizado
+
+async function consultarPrecio() {
+  let ultimoError;
+  for (const f of FUENTES) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), TIMEOUT_MS);
+    try {
+      const r = await fetch(f.url, { signal: ctrl.signal, cache: "no-store" });
+      if (!r.ok) throw new Error(`${f.nombre} HTTP ${r.status}`);
+      const p = Number(f.leer(await r.json()));
+      if (p > 0) return { precio: p, fuente: f.nombre };
+      throw new Error(`${f.nombre}: respuesta sin precio`);
+    } catch (e) {
+      ultimoError = e;
+    } finally {
+      clearTimeout(t);
+    }
+  }
+  throw ultimoError || new Error("sin fuentes");
+}
+
 /* ---------- Alertas de precio ---------- */
 const TITULO = "Control BTC";
 const canNotify = () => typeof window !== "undefined" && "Notification" in window;
@@ -144,11 +179,15 @@ export default function App() {
   const [price, setPrice] = useState(0);
   const [priceStatus, setPriceStatus] = useState("idle"); // idle | loading | live | error | manual
   const [lastUpdated, setLastUpdated] = useState(0);
+  const [fuente, setFuente] = useState("");
   const [tick, setTick] = useState(0); // -1 baja, 0 igual, 1 sube
   const [loaded, setLoaded] = useState(false);
   const [alerts, setAlerts] = useState([]);
   const [onboarded, setOnboarded] = useState(true); // hasta cargar, no parpadea la bienvenida
   const prevPrice = useRef(0);
+  const priceRef = useRef(0);      // último precio mostrado (para la flecha ▲▼)
+  const lecturaRef = useRef(0);    // hora de la última lectura en vivo aplicada
+  const manualRef = useRef(false); // precio escrito a mano: no se pisa hasta tocar refrescar
 
   /* cargar */
   useEffect(() => {
@@ -163,20 +202,74 @@ export default function App() {
       setAlerts(Array.isArray(al) ? al : []);
       // si ya hay datos, no tiene sentido la bienvenida aunque no exista la marca
       setOnboarded(Boolean(ob) || (Array.isArray(p) && p.length > 0) || (Array.isArray(w) && w.length > 0));
-      if (s.price) setPrice(s.price);
+      if (s.price) { setPrice(s.price); priceRef.current = s.price; }
       setLoaded(true);
       fetchPrice({ fallback: s.price });
     })();
   }, []);
 
-  /* auto-actualización cada 30s (tiempo real) */
+  /* respaldo REST cada 30s: solo consulta si el WebSocket no trajo nada reciente */
   useEffect(() => {
-    const iv = setInterval(() => fetchPrice({ silent: true }), 30000);
+    const iv = setInterval(() => {
+      if (Date.now() - lecturaRef.current >= POLL_MS) fetchPrice({ silent: true });
+    }, POLL_MS);
     const onVis = () => {
       if (document.visibilityState === "visible") { document.title = TITULO; fetchPrice({ silent: true }); }
     };
     document.addEventListener("visibilitychange", onVis);
     return () => { clearInterval(iv); document.removeEventListener("visibilitychange", onVis); };
+  }, []);
+
+  /* tiempo real: WebSocket de Coinbase, con reconexión y backoff */
+  useEffect(() => {
+    if (typeof WebSocket === "undefined") return;
+    let ws, reintento = 0, tReconectar, tFlush, tSilencio, cerrado = false;
+    let ultimoEmit = 0, pendiente = 0;
+
+    const flush = () => {
+      tFlush = null;
+      if (!pendiente) return;
+      ultimoEmit = Date.now();
+      aplicarPrecio(pendiente, "Coinbase (WS)");
+      pendiente = 0;
+    };
+    const vigilarSilencio = () => {
+      clearTimeout(tSilencio);
+      tSilencio = setTimeout(() => ws && ws.close(), WS_SILENCIO_MS);
+    };
+    const conectar = () => {
+      try { ws = new WebSocket(WS_URL); } catch { return programar(); }
+      ws.onopen = () => {
+        reintento = 0;
+        ws.send(JSON.stringify({ type: "subscribe", product_ids: ["BTC-USD"], channels: ["ticker"] }));
+        vigilarSilencio();
+      };
+      ws.onmessage = (e) => {
+        vigilarSilencio();
+        let d;
+        try { d = JSON.parse(e.data); } catch { return; }
+        if (d.type !== "ticker" || d.product_id !== "BTC-USD") return;
+        const p = parseFloat(d.price);
+        if (!(p > 0)) return;
+        pendiente = p;
+        const espera = WS_MIN_MS - (Date.now() - ultimoEmit);
+        if (espera <= 0) flush();
+        else if (!tFlush) tFlush = setTimeout(flush, espera);
+      };
+      ws.onerror = () => ws.close();
+      ws.onclose = () => { clearTimeout(tSilencio); if (!cerrado) programar(); };
+    };
+    const programar = () => {
+      clearTimeout(tReconectar);
+      tReconectar = setTimeout(conectar, Math.min(30000, 1000 * 2 ** reintento++));
+    };
+
+    conectar();
+    return () => {
+      cerrado = true;
+      clearTimeout(tReconectar); clearTimeout(tFlush); clearTimeout(tSilencio);
+      if (ws) { ws.onclose = null; ws.close(); }
+    };
   }, []);
 
   /* evaluar alertas en cada lectura de precio */
@@ -210,23 +303,39 @@ export default function App() {
   useEffect(() => { if (loaded) storeSet("btc.onboarded", onboarded); }, [onboarded, loaded]);
   useEffect(() => { if (loaded && price) storeSet("btc.settings", { price }); }, [price, loaded]);
 
+  /* aplica una lectura en vivo (REST o WebSocket) */
+  function aplicarPrecio(p, origen, desde = 0) {
+    if (manualRef.current) return;
+    if (desde && lecturaRef.current > desde) return; // llegó tarde: ya hay una lectura más nueva
+    const old = priceRef.current;
+    priceRef.current = p;
+    lecturaRef.current = Date.now();
+    setTick(old ? (p > old ? 1 : p < old ? -1 : 0) : 0);
+    setPrice(p);
+    setLastUpdated(lecturaRef.current);
+    setFuente(origen);
+    setPriceStatus("live");
+  }
+
   async function fetchPrice(opts = {}) {
     const { silent = false, fallback } = opts;
+    if (manualRef.current) return;
     if (!silent) setPriceStatus("loading");
+    const desde = Date.now();
     try {
-      const r = await fetch("https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd");
-      const d = await r.json();
-      const p = d?.bitcoin?.usd;
-      if (p) {
-        setPrice((old) => { setTick(old ? (p > old ? 1 : p < old ? -1 : 0) : 0); return p; });
-        setLastUpdated(Date.now());
-        setPriceStatus("live");
-        return;
-      }
-      throw new Error("no price");
+      const { precio, fuente: f } = await consultarPrecio();
+      aplicarPrecio(precio, f, desde);
     } catch {
-      if (!silent) setPriceStatus(fallback ? "manual" : "error");
+      // en silencio no se toca el estado: si no llegan lecturas, el badge lo marca como desactualizado
+      if (!silent && lecturaRef.current <= desde) setPriceStatus(fallback ? "manual" : "error");
     }
+  }
+
+  /* precio que viene de un respaldo: se muestra hasta que llegue una lectura en vivo */
+  function precioRespaldo(pr) {
+    if (!(pr > 0) || lecturaRef.current) return;
+    setPrice(pr); priceRef.current = pr; setPriceStatus("manual");
+    fetchPrice({ silent: true });
   }
 
   /* ---------- Métricas globales (costo promedio ponderado) ---------- */
@@ -268,17 +377,19 @@ export default function App() {
       <div style={{ maxWidth: 1120, margin: "0 auto", padding: "18px 16px 60px" }}>
 
         {/* ---------- Header ---------- */}
-        <header className="flex items-center justify-between" style={{ marginBottom: 18 }}>
+        <header className="flex items-center justify-between" style={{ marginBottom: 18, gap: 10 }}>
           <div className="flex items-center" style={{ gap: 11 }}>
             <div style={{ width: 40, height: 40, borderRadius: 11, background: C.orange, display: "grid", placeItems: "center", boxShadow: `0 0 24px ${C.orangeDim}66` }}>
               <Bitcoin size={23} color="#111" strokeWidth={2.4} />
             </div>
             <div>
               <div style={{ fontWeight: 700, fontSize: 15, letterSpacing: -0.2 }}>Control BTC</div>
-              <div style={{ fontSize: 11.5, color: C.mut2, letterSpacing: 0.3, textTransform: "uppercase" }}>Libro de compras &amp; retiros</div>
+              <div className="app-sub" style={{ fontSize: 11.5, color: C.mut2, letterSpacing: 0.3, textTransform: "uppercase" }}>Libro de compras &amp; retiros</div>
             </div>
           </div>
-          <PriceBadge price={price} status={priceStatus} tick={tick} lastUpdated={lastUpdated} onRefresh={() => fetchPrice({ fallback: price })} onSet={(v) => { setPrice(v); setPriceStatus("manual"); }} />
+          <PriceBadge price={price} status={priceStatus} tick={tick} lastUpdated={lastUpdated} fuente={fuente}
+            onRefresh={() => { manualRef.current = false; fetchPrice({ fallback: price }); }}
+            onSet={(v) => { if (!(v > 0)) return; manualRef.current = true; priceRef.current = v; setTick(0); setPrice(v); setPriceStatus("manual"); }} />
         </header>
 
         {!onboarded ? (
@@ -292,7 +403,7 @@ export default function App() {
             }}
             onRestaurar={({ purchases: p, withdrawals: w, alerts: al, price: pr }) => {
               setPurchases(p); setWithdrawals(w); setAlerts(al);
-              if (pr > 0) { setPrice(pr); setPriceStatus("manual"); fetchPrice({ silent: true }); }
+              precioRespaldo(pr);
               setOnboarded(true);
               setTab("dash");
             }}
@@ -300,7 +411,7 @@ export default function App() {
         ) : (
         <>
         {/* ---------- Nav ---------- */}
-        <nav className="flex" style={{ gap: 6, background: C.bg2, padding: 5, borderRadius: 13, border: `1px solid ${C.line}`, marginBottom: 18, overflowX: "auto" }}>
+        <nav className="flex app-nav" style={{ gap: 6, background: C.bg2, padding: 5, borderRadius: 13, border: `1px solid ${C.line}`, marginBottom: 18, overflowX: "auto" }}>
           {NAV.map((n) => {
             const on = tab === n.id;
             const Icon = n.icon;
@@ -311,7 +422,7 @@ export default function App() {
                   border: on ? `1px solid ${C.line}` : "1px solid transparent", cursor: "pointer", whiteSpace: "nowrap" }}>
                 <Icon size={16} color={on ? C.orange : C.mut2} /> {n.label}
                 {n.id === "alertas" && (sinVer > 0 || activas > 0) && (
-                  <span style={{ ...mono, fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "1px 6px",
+                  <span className="tab-badge" style={{ ...mono, fontSize: 10.5, fontWeight: 700, borderRadius: 20, padding: "1px 6px",
                     background: sinVer > 0 ? C.red : C.line, color: sinVer > 0 ? "#fff" : C.mut }}>
                     {sinVer > 0 ? sinVer : activas}
                   </span>
@@ -326,7 +437,7 @@ export default function App() {
             setPurchases(p);
             setWithdrawals(w);
             setAlerts(al);
-            if (pr > 0) { setPrice(pr); setPriceStatus("manual"); fetchPrice({ silent: true }); }
+            precioRespaldo(pr);
           }} />
 
         {tab === "dash" && <Dashboard m={m} price={price} purchases={purchases} onGoTo={setTab} />}
@@ -414,21 +525,27 @@ function Backup({ purchases, withdrawals, alerts, price, onRestore }) {
 }
 
 /* ================= Badge de precio ================= */
-function PriceBadge({ price, status, tick, lastUpdated, onRefresh, onSet }) {
+function PriceBadge({ price, status, tick, lastUpdated, fuente, onRefresh, onSet }) {
   const [edit, setEdit] = useState(false);
   const [v, setV] = useState("");
-  const label = { live: "En vivo", loading: "Cargando…", error: "Sin conexión", manual: "Manual", idle: "—" }[status] || "";
-  const dot = { live: C.green, loading: C.orange, error: C.red, manual: C.blue, idle: C.mut2 }[status];
+  const [ahora, setAhora] = useState(() => Date.now());
+  useEffect(() => { const iv = setInterval(() => setAhora(Date.now()), 5000); return () => clearInterval(iv); }, []);
+  // "en vivo" solo si la última lectura es reciente; si no, se avisa aunque no haya habido un error explícito
+  if (status === "live" && lastUpdated && ahora - lastUpdated > VIEJO_MS) status = "stale";
+  const label = { live: "En vivo", stale: "Desactualizado", loading: "Cargando…", error: "Sin conexión", manual: "Manual", idle: "—" }[status] || "";
+  const dot = { live: C.green, stale: C.orange, loading: C.orange, error: C.red, manual: C.blue, idle: C.mut2 }[status];
   const up = tick > 0, down = tick < 0;
   const tickColor = up ? C.green : down ? C.red : C.mut2;
   const hora = lastUpdated ? new Date(lastUpdated).toLocaleTimeString("es-SV", { hour: "2-digit", minute: "2-digit", second: "2-digit" }) : null;
   return (
-    <div style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "8px 11px", minWidth: 176 }}>
+    <div className="price-badge" style={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 12, padding: "8px 11px", minWidth: 176 }}>
       <div className="flex items-center justify-between" style={{ marginBottom: 2 }}>
         <span style={{ fontSize: 10.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5, display: "flex", alignItems: "center", gap: 5 }}>
           <span className={status === "live" ? "pulse" : ""} style={{ width: 6, height: 6, borderRadius: 6, background: dot, display: "inline-block" }} /> BTC/USD · {label}
         </span>
-        <RefreshCw size={13} color={C.mut} style={{ cursor: "pointer" }} className={status === "loading" ? "spin" : ""} onClick={onRefresh} />
+        <span title={status === "manual" ? "Volver al precio en vivo" : "Actualizar precio"} style={{ display: "inline-flex" }}>
+          <RefreshCw size={13} color={C.mut} style={{ cursor: "pointer" }} className={status === "loading" ? "spin" : ""} onClick={onRefresh} />
+        </span>
       </div>
       {edit ? (
         <div className="flex items-center" style={{ gap: 6 }}>
@@ -446,7 +563,7 @@ function PriceBadge({ price, status, tick, lastUpdated, onRefresh, onSet }) {
         </div>
       )}
       {hora && !edit && (
-        <div style={{ ...mono, fontSize: 9.5, color: C.mut2, marginTop: 1 }}>act. {hora}</div>
+        <div style={{ ...mono, fontSize: 9.5, color: status === "stale" ? C.orange : C.mut2, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>act. {hora}{fuente && status !== "manual" ? ` · ${fuente}` : ""}</div>
       )}
     </div>
   );
@@ -478,7 +595,7 @@ function Dashboard({ m, price, purchases, onGoTo }) {
               BTC que tienes + efectivo que ya retiraste. No es saldo disponible.
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div className="al-der">
             <div style={{ fontSize: 11.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.6 }}>Ganancia total</div>
             <div style={{ ...mono, fontSize: 30, fontWeight: 700, color: posT ? C.green : C.red, lineHeight: 1.05, marginTop: 4 }}>
               {posT ? "+" : ""}{usd(m.gananciaTotal)}
@@ -981,7 +1098,7 @@ function Proyeccion({ m, price, setPrice }) {
     <div>
       <div style={{ ...cardBox, padding: 18, marginBottom: 14 }}>
         <SectionTitle icon={Target}>Simulador de precio</SectionTitle>
-        <div className="flex items-baseline justify-between" style={{ marginBottom: 6 }}>
+        <div className="flex items-baseline justify-between" style={{ marginBottom: 6, flexWrap: "wrap", gap: "8px 16px" }}>
           <div>
             <div style={{ fontSize: 11.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5 }}>Si BTC llega a (editable)</div>
             <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
@@ -991,7 +1108,7 @@ function Proyeccion({ m, price, setPrice }) {
                   borderBottom: `2px solid ${C.orangeDim}`, outline: "none", width: 150, padding: "0 2px" }} />
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
+          <div className="al-der">
             <div style={{ fontSize: 11.5, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5 }}>Ganancia total proyectada</div>
             <div style={{ ...mono, fontSize: 30, fontWeight: 700, color: pos ? C.green : C.red }}>{pos ? "+" : ""}{usd(projTotal)}</div>
           </div>
@@ -1021,7 +1138,7 @@ function Proyeccion({ m, price, setPrice }) {
                 </linearGradient>
               </defs>
               <CartesianGrid stroke={C.line} strokeDasharray="3 3" vertical={false} />
-              <XAxis dataKey="precio" tick={{ fill: C.mut2, fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} stroke={C.line} />
+              <XAxis dataKey="precio" tick={{ fill: C.mut2, fontSize: 11 }} minTickGap={28} interval="preserveStartEnd" tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} stroke={C.line} />
               <YAxis tick={{ fill: C.mut2, fontSize: 11 }} tickFormatter={(v) => `$${(v / 1000).toFixed(0)}k`} stroke={C.line} width={44} />
               <Tooltip contentStyle={{ background: C.card, border: `1px solid ${C.line}`, borderRadius: 10, color: C.text }}
                 labelFormatter={(v) => `BTC a ${usd0(v)}`} formatter={(v) => [usd(v), "Ganancia total"]} />
@@ -1325,7 +1442,7 @@ function Alertas({ alerts, setAlerts, price, m }) {
       )}
 
       <p style={{ fontSize: 11.5, color: C.mut2, marginTop: 14, lineHeight: 1.6 }}>
-        El precio se consulta cada 30 s, así que las alertas solo se evalúan <b style={{ color: C.mut }}>con esta pestaña abierta</b> —
+        El precio llega en vivo mientras la app está abierta, así que las alertas solo se evalúan <b style={{ color: C.mut }}>con esta pestaña abierta</b> —
         si cierras el navegador no hay quien vigile. Una alerta se dispara al <b style={{ color: C.mut }}>cruzar</b> el objetivo y luego
         queda en el historial; puedes volver a armarla desde ahí. Los navegadores ralentizan las pestañas en segundo plano,
         así que en background la comprobación puede espaciarse a ~1 min.
@@ -1355,7 +1472,7 @@ function Kpi({ label, value, sub, color, accent }) {
   return (
     <div style={{ ...cardBox, padding: 14, borderLeft: accent ? `3px solid ${accent}` : `1px solid ${C.line}` }}>
       <div style={{ fontSize: 11, color: C.mut2, textTransform: "uppercase", letterSpacing: 0.5 }}>{label}</div>
-      <div style={{ ...mono, fontSize: 20, fontWeight: 700, marginTop: 5, color: color || C.text, lineHeight: 1.15 }}>{value}</div>
+      <div className="kpi-val" style={{ ...mono, fontSize: 20, fontWeight: 700, marginTop: 5, color: color || C.text, lineHeight: 1.15 }}>{value}</div>
       {sub && <div style={{ fontSize: 11.5, color: C.mut2, marginTop: 3 }}>{sub}</div>}
     </div>
   );
@@ -1435,13 +1552,29 @@ function Calc({ label, value, hint, accent }) {
 
 /* ---------- estilos globales del artifact ---------- */
 const styleSheet = `
-  .grid-kpi { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .grid-form { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
-  .grid-hero { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  /* minmax(0, 1fr): una cifra larga no puede ensanchar la columna y sacar la tarjeta de la pantalla */
+  .grid-kpi { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .grid-form { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .grid-hero { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+  .al-der { text-align: right; }
+  td { white-space: nowrap; }
   @media (max-width: 720px) {
-    .grid-kpi { grid-template-columns: repeat(2, 1fr); }
-    .grid-form { grid-template-columns: repeat(2, 1fr); }
-    .calc-row { grid-template-columns: repeat(3, 1fr) !important; gap: 6px !important; }
+    .grid-kpi { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .grid-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .calc-row { grid-template-columns: repeat(3, minmax(0, 1fr)) !important; gap: 6px !important; }
+  }
+  /* teléfono */
+  @media (max-width: 560px) {
+    .app-sub { display: none; }
+    .price-badge { min-width: 0 !important; max-width: 60vw; }
+    .grid-hero { grid-template-columns: minmax(0, 1fr); }
+    .al-der { text-align: left; }
+    /* las 5 pestañas caben: icono arriba, texto abajo */
+    .app-nav { display: grid !important; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 3px !important; overflow: visible !important; }
+    .tab-btn { position: relative; flex-direction: column; gap: 3px !important; padding: 7px 2px !important; font-size: 10.5px !important; min-width: 0; }
+    /* las cifras se achican con la pantalla para no salirse de su tarjeta */
+    .kpi-val { font-size: clamp(14px, 4.5vw, 20px) !important; overflow-wrap: anywhere; }
+    .tab-badge { position: absolute; top: 3px; right: 4px; font-size: 9.5px !important; padding: 0 5px !important; }
   }
   input[type=date]::-webkit-calendar-picker-indicator { filter: invert(0.6); }
   .spin { animation: spin 0.8s linear infinite; }
