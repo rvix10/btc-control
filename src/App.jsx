@@ -63,10 +63,11 @@ const d8 = (n) => (isFinite(n) ? (Math.round(n * 1e8) / 1e8).toString() : "");
 const mono = { fontFamily: "ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, monospace", fontVariantNumeric: "tabular-nums" };
 
 /* ---------- Fuentes de precio ---------- */
-// REST: se prueban en orden; si una falla (red, 429, timeout) se pasa a la siguiente
+// REST: se prueban en orden; si una falla (red, 403/429, timeout) se pasa a la siguiente.
+// Coinbase primero: es la misma fuente que el WebSocket, y CoinGecko bloquea algunas IPs (403 de CloudFront)
 const FUENTES = [
-  { nombre: "CoinGecko", url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", leer: (d) => d?.bitcoin?.usd },
   { nombre: "Coinbase", url: "https://api.coinbase.com/v2/prices/BTC-USD/spot", leer: (d) => parseFloat(d?.data?.amount) },
+  { nombre: "CoinGecko", url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", leer: (d) => d?.bitcoin?.usd },
 ];
 // WebSocket público de Coinbase: una lectura por operación, sin API key
 const WS_URL = "wss://ws-feed.exchange.coinbase.com";

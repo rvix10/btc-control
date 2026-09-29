@@ -88,10 +88,10 @@ const enviar = (chat_id, text) =>
 const avisarATodos = (text) => Promise.all(estado.chats.map((c) => enviar(c, text)));
 
 /* ---------- precio ---------- */
-/* mismas fuentes que la app: si CoinGecko falla (429, caída, timeout) se usa Coinbase */
+/* mismas fuentes que la app: Coinbase y, si falla, CoinGecko */
 const FUENTES = [
-  { nombre: "CoinGecko", url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", leer: (d) => d?.bitcoin?.usd },
   { nombre: "Coinbase", url: "https://api.coinbase.com/v2/prices/BTC-USD/spot", leer: (d) => parseFloat(d?.data?.amount) },
+  { nombre: "CoinGecko", url: "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd", leer: (d) => d?.bitcoin?.usd },
 ];
 
 async function precioBTC() {
